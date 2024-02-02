@@ -1,5 +1,10 @@
-open Printf
- 
+(*	Ana Laura Lumertz Schardosim 00333712 
+    Laura Becker Ramos           00326890
+    Leo Marco De Assis Hardt     00333562 *)
+
+(* Partes de codigos concedidos pelo professor farao usados para fazer o trabalho*)
+
+(*------TIPOS------*)
 type tipo = 
     TyInt 
   | TyBool
@@ -17,7 +22,14 @@ let rec ttos (t:tipo) : string =
 
 type ident = string
 
-type bop = Sum | Sub | Mult | Eq | Gt | Lt | Geq | Leq
+type bop = Sum | Sub | Mult | Eq | Gt | Lt | Geq | Leq 
+           
+type amb = (ident * tipo) list
+                                                          
+(* e ::= n | b | e1 op e2 | if e1 then e2 else e3
+           | x | e1 e2 | fn x :T ⇒ e | let x : T = e1 in e2
+           | let rec f : T1 → T2 = (fn x:T1 ⇒ e1) in e2
+           | e1:= e2 | ! e | new e | skip | while e1 do e2 | e1; e2 | l *)
 
 type expr =
   | Num of int
@@ -37,9 +49,8 @@ type expr =
   | Whl of expr * expr
   | Skip
   | Unit
-              
-type amb = (ident * tipo) list
-
+  
+(*------VALORES------*)
 type valor =
   | ValNum of int
   | ValTrue
@@ -62,8 +73,7 @@ let rec vtos (v: valor) : string =
   | ValSkip -> "Skip"
   | ValIdent _ -> "Ident"
   
-type mem = (ident * valor) list
-    
+(*------FUNCOES------*) 
 let rec lookup_location loc x =
   match loc with
   | [] -> None
@@ -83,8 +93,13 @@ let rec max_address a m =
        let v = int_of_string y in 
        max_address tl (max v m))
   
+(*------MEMORIA------*)
+type mem = (ident * valor) list
+  
+(*------TYPEINFER------*)   
 exception BugParser 
 exception BugTypeInfer
+exception MemoryError of string
 exception TypeError of string
 
 let rec typeinfer (amb:amb) (e:expr) : tipo =
@@ -94,20 +109,20 @@ let rec typeinfer (amb:amb) (e:expr) : tipo =
   | Var x ->
       (match lookup_location amb x with
          Some t -> t
-       | None -> raise (TypeError ("variavel nao declarada:" ^ x)))
+       | None -> raise (TypeError ("Variavel nao foi declarada: " ^ x)))
 
   | True  -> TyBool
     
   | False -> TyBool
     
-  | Binop(oper,e1,e2) ->
+  | Binop(op,e1,e2) ->
       let t1 = typeinfer amb e1 in
       let t2 = typeinfer amb e2 in
       if t1 = TyInt && t2 = TyInt then
-        (match oper with
+        (match op with
            Sum | Sub | Mult -> TyInt
          | Eq | Lt | Gt | Geq | Leq -> TyBool)
-      else raise (TypeError "operando nao é do tipo int")
+      else raise (TypeError "Tipo int e esperado do operando")
 
   | If(e1,e2,e3) ->
       (match typeinfer amb e1 with
@@ -115,8 +130,8 @@ let rec typeinfer (amb:amb) (e:expr) : tipo =
            let t2 = typeinfer amb e2 in
            let t3 = typeinfer amb e3
            in if t2 = t3 then t2
-           else raise (TypeError "then/else com tipos diferentes")
-       | _ -> raise (TypeError "condição de IF não é do tipo bool"))
+           else raise (TypeError "Then/else devem ser do mesmo tipo")
+       | _ -> raise (TypeError "If deve ser um booleano"))
 
   | Fn(x,t,e1) ->
       let t1 = typeinfer (update_location amb x t) e1
@@ -125,19 +140,19 @@ let rec typeinfer (amb:amb) (e:expr) : tipo =
   | App(e1,e2) ->
       (match typeinfer amb e1 with
          TyFn(t, t') ->  if (typeinfer amb e2) = t then t'
-           else raise (TypeError "tipo argumento errado" )
-       | _ -> raise (TypeError "tipo função era esperado"))
+           else raise (TypeError "Argumento com tipo errado" )
+       | _ -> raise (TypeError "Tipo funcao e esperado"))
 
   | Let(x,t,e1,e2) ->
       if (typeinfer amb e1) = t then typeinfer (update_location amb x t) e2
-      else raise (TypeError "expr nao é do tipo declarado em Let" )
+      else raise (TypeError "Expressao nao é do tipo declarado em Let" )
 
   | LetRec(f,(TyFn(t1,t2) as tf), Fn(x,tx,e1), e2) ->
       let amb_tf = update_location amb f tf in
       let amb_tf_tx = update_location amb_tf x tx in
       if (typeinfer amb_tf_tx e1) = t2
       then typeinfer amb_tf e2
-      else raise (TypeError "tipo da funcao diferente do declarado")
+      else raise (TypeError "Tipo funcao diferente do declarado")
 
   | LetRec _ -> raise BugParser
 
@@ -147,11 +162,13 @@ let rec typeinfer (amb:amb) (e:expr) : tipo =
       let t1 = typeinfer amb e1 in
       let t2 = typeinfer amb e2 in
       if t1 = TyRef t2 then TyUnit
-      else raise (TypeError "Atribuição inválida.")
+      else raise (TypeError "Essa atribuicao nao e valida")
+          
   | Dref e ->
       (match typeinfer amb e with
          TyRef t -> t
-       | _ -> raise (TypeError "Desreferenciamento de um valor que não é uma referência."))
+       | _ -> raise (TypeError "Erro no desreferenciamento"))
+      
   |New e ->
       let t = typeinfer amb e in
       TyRef t
@@ -161,9 +178,9 @@ let rec typeinfer (amb:amb) (e:expr) : tipo =
         if typeinfer amb e2 = TyUnit then
           TyUnit
         else
-          raise (TypeError "Corpo do while deve ter tipo unit")
+          raise (TypeError "Tipo unit e esperado para While")
       else
-        raise (TypeError "Condição do while deve ter tipo bool")
+        raise (TypeError "While espera tipo booleano como condicao")
           
   | Seq (e1, e2) ->
       let _ = typeinfer amb e1 in
@@ -171,8 +188,8 @@ let rec typeinfer (amb:amb) (e:expr) : tipo =
         
   |Unit -> TyUnit
 
-(*------Avaliador------*)
-              (*------Funções do Binop------*)
+(*------AVALIADOR------*)
+              (*------FUNCOES BINOP------*)
 
 let compute(op: bop) (v1: valor) (v2:valor) = match (op,v1,v2) with
     (Sum, ValNum(n1),  ValNum(n2)) -> ValNum(n1+n2) 
@@ -183,13 +200,12 @@ let compute(op: bop) (v1: valor) (v2:valor) = match (op,v1,v2) with
   | (Lt, ValNum(n1), ValNum(n2)) -> if (n1 < n2) then ValTrue else ValFalse
   | (Geq, ValNum(n1), ValNum(n2)) -> if (n1 >= n2) then ValTrue else ValFalse
   | (Leq, ValNum(n1), ValNum(n2)) -> if (n1 <= n2) then ValTrue else ValFalse
-  | _ -> raise BugTypeInfer
-  
-
+  | _ -> raise BugTypeInfer 
 
   
 let rec eval (gamma: gamma) (mem: mem) (e:expr) : valor * mem = 
   match e with
+  
     Num n-> (ValNum n, mem)
             
 
@@ -230,8 +246,6 @@ let rec eval (gamma: gamma) (mem: mem) (e:expr) : valor * mem =
            eval gamma''' mem ebdy
        | _ -> raise BugTypeInfer)
 
-
-  (* Memory allocated on e1 should be carried on to e2   *)
   | Let(x,_,e1,e2) ->
       let (v1, m_new) = eval gamma mem e1
       in eval (update_location gamma x v1) m_new e2 
@@ -258,10 +272,10 @@ let rec eval (gamma: gamma) (mem: mem) (e:expr) : valor * mem =
       let (v, mem) = eval gamma mem e in
       (match v with 
          ValIdent(t) ->
-          (match lookup_location mem t with
-            Some a -> (a, mem)
-          | None -> raise BugTypeInfer)   
-        | _ -> raise BugTypeInfer) 
+           (match lookup_location mem t with
+              Some a -> (a, mem)
+            | None -> raise (MemoryError t))   
+       | _ -> raise BugTypeInfer) 
 
   | Whl(e1, e2) ->  eval gamma mem (If (e1, Seq(e2, Whl(e1, e2)), Skip)) 
                       
@@ -273,34 +287,57 @@ let rec eval (gamma: gamma) (mem: mem) (e:expr) : valor * mem =
       
   | New(e) ->
       let (v, mem) = eval gamma mem e in
-      let i = sprintf "%d" ((max_address mem 0) + 1) in
+      let i = string_of_int( List.length mem ) in
       (ValIdent(i), update_location mem i v)
 
   | Unit-> (ValSkip, mem)
+  
+           
+(*------FUNCOES PRINT------*)
           
-let int_st (e:expr) : unit =
+let int_st (e: expr) : unit =
   try
     let t = typeinfer [] e in
-    let (v, _) = eval [] [] e
-    in  print_string ((vtos v) ^ " : " ^ (ttos t))
+    let (v, mem) = eval [] [] e in
+    print_string ("Resultado: " ^ (vtos v) ^ " : " ^ (ttos t) ^ "\n");
+  
+    (*-------PRINT MEMORIA------*)
+    (*print_string "Memória:\n";
+     List.iter (fun (ident, value) ->
+         let value_str = match value with
+           | ValIdent ref_ident ->
+               (match lookup_location mem ref_ident with
+                | Some ref_value -> vtos ref_value
+                | None -> "N/A")
+           | _ -> vtos value
+         in
+         Printf.printf "%s : %s\n" ident value_str
+       ) mem;*)
+
   with 
-    TypeError msg ->  print_string ("erro de tipo - " ^ msg) 
-  | BugTypeInfer  ->  print_string "corrigir bug em typeinfer"
-  | BugParser     ->  print_string "corrigir bug no parser para let rec"
-
-          
+    TypeError msg    -> print_string ("Erro de tipo - " ^ msg ^ "\n")
+  | BugTypeInfer     -> print_string "Corrigir bug em typeinfer\n"
+  | BugParser        -> print_string "Corrigir bug no parser para let rec\n"
+  | MemoryError msg  -> print_string ("Endereco  "^ msg ^" nao encontrada na memoria\n"
+)
                        
-(*------Tests ------*) 
+(*------TESTES------*) 
 
-let teste0 = Binop(Sum, Num 10, Num 20 )
+let multivar = Let("x", TyRef TyInt, New (Num 3),
+               Let("y", TyRef TyInt, New (Num 4),
+               Let("z", TyRef TyInt, New (Num 5),
+               
+               Binop(Sum, Num 100, Dref(Var "y"))
+               )))
 
-let teste01 = Let("x",  TyInt,  Num 10, Binop( Sum, Num 3,  Var "x" )) 
-
-let teste02 = Let("x",  TyRef TyInt,  New (Num 10), Binop( Sum, Num 3,  Num 8 )) 
-
-let teste03 = Let("x",  TyRef TyInt,  New (Num 10), Binop( Sum, Num 3,  Dref(Var "x") )) 
-      
-      
+let invalidDref = Let("x", TyRef TyInt, New (Num 3),
+               Let("y", TyRef TyInt, New (Num 4),
+               Let("z", TyRef TyInt, New (Num 5),
+               
+               Binop(Sum, Num 100, Dref(Var "w"))
+               )))
+               
+               
 let teste1 = Let("x", TyRef TyInt, New (Num 3),
                  Let("y", TyInt, Dref (Var "x"),
                      Seq(Asg(Var "x", Binop(Sum, Dref(Var "x"), Num 1)),
@@ -328,4 +365,3 @@ let bodyfat = Let("z", TyRef TyInt, New (Var "x"),
                   Let("y", TyRef TyInt, New (Num 1), Seq (whilefat, Dref (Var "y"))))
     
 let impfat = Let("fat", TyFn(TyInt,TyInt), Fn("x", TyInt, bodyfat), App(Var "fat", Num 5))
-
