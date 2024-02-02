@@ -323,21 +323,6 @@ let int_st (e: expr) : unit =
                        
 (*------TESTES------*) 
 
-let multivar = Let("x", TyRef TyInt, New (Num 3),
-               Let("y", TyRef TyInt, New (Num 4),
-               Let("z", TyRef TyInt, New (Num 5),
-               
-               Binop(Sum, Num 100, Dref(Var "y"))
-               )))
-
-let invalidDref = Let("x", TyRef TyInt, New (Num 3),
-               Let("y", TyRef TyInt, New (Num 4),
-               Let("z", TyRef TyInt, New (Num 5),
-               
-               Binop(Sum, Num 100, Dref(Var "w"))
-               )))
-               
-               
 let teste1 = Let("x", TyRef TyInt, New (Num 3),
                  Let("y", TyInt, Dref (Var "x"),
                      Seq(Asg(Var "x", Binop(Sum, Dref(Var "x"), Num 1)),
